@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.heritageapp-mergeDebugResources-7:/values-lo/values-lo.xml",
+            "map": [
+                {
+                    "source": "/Users/armandshematsi/.gradle/caches/transforms-3/b71b4547fc6d3dcc2313601219b2620b/transformed/core-1.6.0/res/values-lo/values-lo.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "100",
+                        "endOffsets": "151"
+                    }
+                }
+            ]
+        }
+    ]
+}

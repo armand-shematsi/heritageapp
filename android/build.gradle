@@ -1,0 +1,27 @@
+// Top-level build file for HeritageApp
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Android Gradle Plugin compatible with Gradle 8.2 and Java 17
+        classpath 'com.android.tools.build:gradle:8.1.0'
+        // If you use Kotlin in your app, include this:
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.10"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+// Task to clean the project
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
+
