@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../models/mood_entry.dart';
+import '../services/mood_entry_service.dart';
+import 'package:intl/intl.dart';
 
 class MentalHealthScreen extends StatefulWidget {
   @override
@@ -6,16 +9,29 @@ class MentalHealthScreen extends StatefulWidget {
 }
 
 class _MentalHealthScreenState extends State<MentalHealthScreen> {
+  final MoodEntryService _moodEntryService = MoodEntryService();
+  final TextEditingController _notesController = TextEditingController();
+  
   int _moodRating = 5;
-  String _moodNotes = '';
   DateTime _selectedDate = DateTime.now();
+  List<MoodEntry> _moodHistory = [];
+  bool _isLoading = false;
+  bool _isLoadingHistory = true;
 
-  final List<Map<String, dynamic>> _moodHistory = [
-    {'date': 'Today', 'mood': 7, 'notes': 'Feeling connected to community'},
-    {'date': 'Yesterday', 'mood': 4, 'notes': 'Missing home today'},
-    {'date': 'Nov 10', 'mood': 8, 'notes': 'Great cultural event!'},
-    {'date': 'Nov 9', 'mood': 6, 'notes': 'Talked with family back home'},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadMoodHistory();
+  }
+
+  Future<void> _loadMoodHistory() async {
+    setState(() => _isLoadingHistory = true);
+    final entries = await _moodEntryService.getMoodEntries();
+    setState(() {
+      _moodHistory = entries;
+      _isLoadingHistory = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -98,20 +114,26 @@ class _MentalHealthScreenState extends State<MentalHealthScreen> {
                 style: TextStyle(fontWeight: FontWeight.w500)),
             SizedBox(height: 8),
             TextField(
+              controller: _notesController,
               decoration: InputDecoration(
                 hintText: 'How was your day? Any cultural connections?',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
-              onChanged: (value) => _moodNotes = value,
             ),
             SizedBox(height: 16),
 
             // Save Button
             ElevatedButton.icon(
-              onPressed: _saveMoodEntry,
-              icon: Icon(Icons.save),
-              label: Text('Save Mood Entry'),
+              onPressed: _isLoading ? null : _saveMoodEntry,
+              icon: _isLoading 
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Icon(Icons.save),
+              label: Text(_isLoading ? 'Saving...' : 'Save Mood Entry'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
@@ -179,15 +201,39 @@ class _MentalHealthScreenState extends State<MentalHealthScreen> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 12),
-            ..._moodHistory.map((entry) => _MoodHistoryItem(
-              date: entry['date'] as String,
-              mood: entry['mood'] as int,
-              notes: entry['notes'] as String,
-            )).toList(),
+            if (_isLoadingHistory)
+              Center(child: CircularProgressIndicator())
+            else if (_moodHistory.isEmpty)
+              Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text(
+                    'No mood entries yet. Start tracking your mood!',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ),
+              )
+            else
+              ..._moodHistory.take(10).map((entry) => _MoodHistoryItem(
+                date: _formatDate(entry.date),
+                mood: entry.moodRating,
+                notes: entry.notes,
+              )).toList(),
           ],
         ),
       ),
     );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date).inDays;
+    
+    if (difference == 0) return 'Today';
+    if (difference == 1) return 'Yesterday';
+    if (difference < 7) return '$difference days ago';
+    
+    return DateFormat('MMM d').format(date);
   }
 
   Widget _buildSupportResources() {
@@ -244,10 +290,45 @@ class _MentalHealthScreenState extends State<MentalHealthScreen> {
     return Colors.green;
   }
 
-  void _saveMoodEntry() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Mood entry saved!')),
-    );
+  Future<void> _saveMoodEntry() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+    
+    try {
+      final entry = await _moodEntryService.createMoodEntry(
+        moodRating: _moodRating,
+        notes: _notesController.text.trim(),
+        date: _selectedDate,
+      );
+
+      if (entry != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mood entry saved!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Clear form
+        _notesController.clear();
+        setState(() => _moodRating = 5);
+        
+        // Reload history
+        await _loadMoodHistory();
+      } else {
+        throw Exception('Failed to save mood entry');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving mood entry: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   void _showAnalytics() {
@@ -301,12 +382,12 @@ class _InsightChip extends StatelessWidget {
 class _MoodHistoryItem extends StatelessWidget {
   final String date;
   final int mood;
-  final String notes;
+  final String? notes;
 
   const _MoodHistoryItem({
     required this.date,
     required this.mood,
-    required this.notes,
+    this.notes,
   });
 
   @override
@@ -341,12 +422,13 @@ class _MoodHistoryItem extends StatelessWidget {
                   date,
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
-                Text(
-                  notes,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                if (notes != null && notes!.isNotEmpty)
+                  Text(
+                    notes!,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),

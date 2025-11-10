@@ -18,4 +18,17 @@ class HeritageSite {
     required this.latitude,
     required this.longitude,
   });
+
+  factory HeritageSite.fromJson(Map<String, dynamic> json) {
+    return HeritageSite(
+      id: json['id'].toString(),
+      name: json['name'] ?? '',
+      description: json['description'] ?? '',
+      location: json['location'] ?? '',
+      imageUrl: json['image_url'] ?? '',
+      culturalSignificance: json['cultural_significance'] ?? '',
+      latitude: (json['latitude'] ?? 0.0).toDouble(),
+      longitude: (json['longitude'] ?? 0.0).toDouble(),
+    );
+  }
 }

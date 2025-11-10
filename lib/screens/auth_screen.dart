@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/auth_service.dart';
 
 class AuthScreen extends StatefulWidget {
+  final VoidCallback? onAuthSuccess;
+  
+  const AuthScreen({Key? key, this.onAuthSuccess}) : super(key: key);
+
   @override
   _AuthScreenState createState() => _AuthScreenState();
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final AuthService _authService = AuthService();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
@@ -24,53 +28,37 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       print('🔄 Starting signup process...');
 
-      // 1. Create auth user
-      final authResponse = await _supabase.auth.signUp(
+      final response = await _authService.register(
+        name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
+        culturalBackground: _culturalBackgroundController.text.trim().isEmpty 
+            ? null 
+            : _culturalBackgroundController.text.trim(),
+        currentLocation: _locationController.text.trim().isEmpty 
+            ? null 
+            : _locationController.text.trim(),
       );
 
-      print('✅ Auth user created: ${authResponse.user?.id}');
+      print('✅ Account created successfully: ${response['user']?['id']}');
 
-      if (authResponse.user != null) {
-        // 2. Create user profile in database
-        final response = await _supabase
-            .from('users')
-            .insert({
-          'id': authResponse.user!.id,
-          'email': _emailController.text.trim(),
-          'name': _nameController.text.trim(),
-          'cultural_background': _culturalBackgroundController.text.trim(),
-          'current_location': _locationController.text.trim(),
-          'languages': ['English'],
-        })
-            .select();
-
-        print('✅ User profile created in database: $response');
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Account created successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Clear form
-        _clearForm();
-
-        // Navigation happens automatically via the StreamBuilder in AuthWrapper
-      }
-    } on AuthException catch (error) {
-      print('❌ Auth error: ${error.message}');
+      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.message),
-          backgroundColor: Colors.red,
+          content: Text('Account created successfully!'),
+          backgroundColor: Colors.green,
         ),
       );
+
+      // Clear form
+      _clearForm();
+
+      // Trigger auth success callback
+      if (widget.onAuthSuccess != null) {
+        widget.onAuthSuccess!();
+      }
     } catch (error) {
-      print('❌ General error: $error');
+      print('❌ Signup error: $error');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to create account: $error'),
@@ -87,12 +75,12 @@ class _AuthScreenState extends State<AuthScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final response = await _supabase.auth.signInWithPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+      final response = await _authService.login(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
       );
 
-      print('✅ Signed in successfully: ${response.user?.id}');
+      print('✅ Signed in successfully: ${response['user']?['id']}');
 
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,18 +93,15 @@ class _AuthScreenState extends State<AuthScreen> {
       // Clear form
       _clearForm();
 
-      // Navigation happens automatically via the StreamBuilder in AuthWrapper
-    } on AuthException catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.message),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Trigger auth success callback
+      if (widget.onAuthSuccess != null) {
+        widget.onAuthSuccess!();
+      }
     } catch (error) {
+      print('❌ Login error: $error');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('An error occurred: $error'),
+          content: Text('Login failed: $error'),
           backgroundColor: Colors.red,
         ),
       );

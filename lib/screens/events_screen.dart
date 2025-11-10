@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/event_service.dart';
 
 class EventsScreen extends StatefulWidget {
   @override
@@ -6,8 +7,11 @@ class EventsScreen extends StatefulWidget {
 }
 
 class _EventsScreenState extends State<EventsScreen> {
+  final EventService _eventService = EventService();
   int _selectedCategory = 0; // 0: All, 1: Virtual, 2: In-Person
   DateTime _selectedDate = DateTime.now();
+  List<Map<String, dynamic>> _events = [];
+  bool _isLoading = true;
 
   final List<Map<String, dynamic>> _eventCategories = [
     {'name': 'All', 'icon': Icons.all_inclusive},
@@ -15,64 +19,21 @@ class _EventsScreenState extends State<EventsScreen> {
     {'name': 'In-Person', 'icon': Icons.location_on},
   ];
 
-  final List<Map<String, dynamic>> _events = [
-    {
-      'id': '1',
-      'title': 'Traditional Dance Festival',
-      'date': '2024-11-15',
-      'time': '18:00',
-      'location': 'Virtual Event',
-      'description': 'Learn traditional dances from various African cultures with expert instructors',
-      'type': 'Virtual',
-      'price': 'Free',
-      'attendees': 45,
-      'image': 'dance',
-      'host': 'African Cultural Center',
-      'duration': '2 hours',
-    },
-    {
-      'id': '2',
-      'title': 'Swahili Language Exchange',
-      'date': '2024-11-20',
-      'time': '16:00',
-      'location': 'Community Center, Kampala',
-      'description': 'Practice Swahili with native speakers and learners',
-      'type': 'In-Person',
-      'price': 'Free',
-      'attendees': 23,
-      'image': 'language',
-      'host': 'Swahili Learners Group',
-      'duration': '1.5 hours',
-    },
-    {
-      'id': '3',
-      'title': 'East African Cooking Workshop',
-      'date': '2024-11-25',
-      'time': '14:00',
-      'location': 'Virtual Event',
-      'description': 'Cook traditional East African dishes with Chef Amina',
-      'type': 'Virtual',
-      'price': '\$15',
-      'attendees': 32,
-      'image': 'cooking',
-      'host': 'Chef Amina Hassan',
-      'duration': '2.5 hours',
-    },
-    {
-      'id': '4',
-      'title': 'Cultural Storytelling Night',
-      'date': '2024-12-01',
-      'time': '19:00',
-      'location': 'Heritage Museum, Nairobi',
-      'description': 'Share and listen to cultural stories from elders',
-      'type': 'In-Person',
-      'price': '\$5',
-      'attendees': 18,
-      'image': 'storytelling',
-      'host': 'Elders Council',
-      'duration': '3 hours',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadEvents();
+  }
+
+  Future<void> _loadEvents() async {
+    setState(() => _isLoading = true);
+    final events = await _eventService.getEvents();
+    setState(() {
+      _events = events;
+      _isLoading = false;
+    });
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -149,6 +110,31 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   Widget _buildEventsList() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+
+    if (_events.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.event_busy, size: 64, color: Colors.grey[400]),
+            SizedBox(height: 16),
+            Text(
+              'No events found',
+              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Check back later for upcoming events',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
+    }
+
     final filteredEvents = _events.where((event) {
       if (_selectedCategory == 0) return true;
       if (_selectedCategory == 1) return event['type'] == 'Virtual';
@@ -182,7 +168,11 @@ class _EventsScreenState extends State<EventsScreen> {
       itemCount: filteredEvents.length,
       itemBuilder: (context, index) {
         final event = filteredEvents[index];
-        return _EventCard(event: event);
+        return _EventCard(
+          event: event,
+          eventService: _eventService,
+          onRegistered: _loadEvents,
+        );
       },
     );
   }
@@ -262,17 +252,23 @@ class _EventCategoryChip extends StatelessWidget {
 
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
+  final EventService eventService;
+  final VoidCallback onRegistered;
 
-  const _EventCard({required this.event});
+  const _EventCard({
+    required this.event,
+    required this.eventService,
+    required this.onRegistered,
+  });
 
-  void _shareEvent(BuildContext context, Map<String, dynamic> event) {
+  void _shareEvent(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Sharing ${event['title']}...')),
     );
   }
 
-  void _registerForEvent(BuildContext context, Map<String, dynamic> event) {
-    showDialog(
+  Future<void> _registerForEvent(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Register for Event'),
@@ -285,7 +281,7 @@ class _EventCard extends StatelessWidget {
             Text('Date: ${event['date']} at ${event['time']}'),
             Text('Location: ${event['location']}'),
             SizedBox(height: 16),
-            Text('Price: ${event['price']}'),
+            Text('Price: ${event['price'] ?? 'Free'}'),
             SizedBox(height: 8),
             Text(
               'You will receive a confirmation email with event details and joining instructions.',
@@ -295,41 +291,46 @@ class _EventCard extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Successfully registered for ${event['title']}!')),
-              );
-            },
+            onPressed: () => Navigator.pop(context, true),
             child: Text('Confirm Registration'),
           ),
         ],
       ),
     );
-  }
 
-  Color _getEventColor(String imageType) {
-    switch (imageType) {
-      case 'dance': return Colors.purple;
-      case 'language': return Colors.blue;
-      case 'cooking': return Colors.orange;
-      case 'storytelling': return Colors.green;
-      default: return Colors.blue;
+    if (confirmed == true) {
+      final success = await eventService.registerForEvent(event['id'].toString());
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success 
+                ? 'Successfully registered for ${event['title']}!'
+                : 'Failed to register. Please try again.'),
+            backgroundColor: success ? Colors.green : Colors.red,
+          ),
+        );
+        if (success) {
+          onRegistered(); // Refresh to update attendee count
+        }
+      }
     }
   }
 
-  IconData _getEventIcon(String imageType) {
-    switch (imageType) {
-      case 'dance': return Icons.celebration;
-      case 'language': return Icons.language;
-      case 'cooking': return Icons.restaurant;
-      case 'storytelling': return Icons.history_edu;
-      default: return Icons.event;
-    }
+  Color _getEventColor() {
+    // Use a hash of the title to get a consistent color
+    final title = event['title']?.toString() ?? '';
+    final colors = [Colors.purple, Colors.blue, Colors.orange, Colors.green, Colors.red, Colors.teal];
+    return colors[title.hashCode.abs() % colors.length];
+  }
+
+  IconData _getEventIcon() {
+    final type = event['type']?.toString() ?? '';
+    if (type == 'Virtual') return Icons.videocam;
+    return Icons.event;
   }
 
   @override
@@ -345,7 +346,7 @@ class _EventCard extends StatelessWidget {
           Container(
             height: 120,
             decoration: BoxDecoration(
-              color: _getEventColor(event['image'] as String),
+              color: _getEventColor(),
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -353,7 +354,7 @@ class _EventCard extends StatelessWidget {
             ),
             child: Center(
               child: Icon(
-                _getEventIcon(event['image'] as String),
+                _getEventIcon(),
                 size: 40,
                 color: Colors.white,
               ),
@@ -444,7 +445,7 @@ class _EventCard extends StatelessWidget {
                         Icon(Icons.people, size: 16, color: Colors.grey),
                         SizedBox(width: 4),
                         Text(
-                          '${event['attendees']} attending',
+                          '${event['attendees_count'] ?? 0} attending',
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ],
@@ -452,12 +453,12 @@ class _EventCard extends StatelessWidget {
                     Row(
                       children: [
                         OutlinedButton(
-                          onPressed: () => _shareEvent(context, event),
+                          onPressed: () => _shareEvent(context),
                           child: Text('Share'),
                         ),
                         SizedBox(width: 8),
                         ElevatedButton(
-                          onPressed: () => _registerForEvent(context, event),
+                          onPressed: () => _registerForEvent(context),
                           child: Text('Register'),
                         ),
                       ],

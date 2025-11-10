@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/home_screen.dart';
 import 'screens/family_tree_screen.dart';
 import 'screens/community_screen.dart';
@@ -7,22 +6,10 @@ import 'screens/mental_health_screen.dart';
 import 'screens/events_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/auth_screen.dart';
-import 'config/supabase_config.dart';
+import 'services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Supabase with error handling
-  try {
-    await Supabase.initialize(
-      url: SupabaseConfig.supabaseUrl,
-      anonKey: SupabaseConfig.supabaseAnonKey,
-    );
-    print('✅ Supabase initialized successfully');
-  } catch (e) {
-    print('❌ Supabase initialization failed: $e');
-  }
-
   runApp(MyHeritageApp());
 }
 
@@ -60,8 +47,9 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final AuthService _authService = AuthService();
   bool _isInitializing = true;
+  bool _isAuthenticated = false;
 
   @override
   void initState() {
@@ -70,8 +58,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _checkInitialAuth() async {
-    // Check initial auth state
-    await Future.delayed(Duration(seconds: 1));
+    // Check if user is already authenticated
+    _isAuthenticated = _authService.isAuthenticated;
+    if (_isAuthenticated) {
+      // Verify token is still valid by fetching user
+      final user = await _authService.getCurrentUser();
+      _isAuthenticated = user != null;
+    }
+    
     setState(() {
       _isInitializing = false;
     });
@@ -83,23 +77,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return _buildLoadingScreen();
     }
 
-    // Use StreamBuilder to automatically react to auth state changes
-    return StreamBuilder<AuthState>(
-      stream: _supabase.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        // Show loading while connecting to stream
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildLoadingScreen();
-        }
+    if (_isAuthenticated) {
+      return MainNavigationScreen();
+    }
 
-        final session = _supabase.auth.currentSession;
-        print('🔄 Auth state changed. User logged in: ${session != null}');
-
-        if (session != null) {
-          return MainNavigationScreen();
-        }
-
-        return AuthScreen();
+    return AuthScreen(
+      onAuthSuccess: () {
+        setState(() {
+          _isAuthenticated = true;
+        });
       },
     );
   }
@@ -139,7 +125,7 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final AuthService _authService = AuthService();
 
   // Use your actual screens
   final List<Widget> _screens = [
@@ -160,8 +146,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   // Sign out method
   Future<void> _signOut() async {
     try {
-      await _supabase.auth.signOut();
+      await _authService.logout();
       print('✅ User signed out successfully');
+      // Navigate back to auth screen
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => AuthWrapper()),
+      );
     } catch (error) {
       print('❌ Error signing out: $error');
     }

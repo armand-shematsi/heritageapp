@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/heritage_site.dart';
 import '../models/user_model.dart';
+import '../services/auth_service.dart';
+import '../services/heritage_site_service.dart';
 import 'search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -9,51 +11,51 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final User currentUser = User(
-    id: '1',
-    name: 'Hisham',
-    email: 'hisham@heritage.com',
-    culturalBackground: 'East African',
-    currentLocation: 'Kampala, Uganda',
-    languages: ['English', 'Swahili', 'Arabic'],
-    joinDate: DateTime(2024, 1, 1),
-  );
+  final AuthService _authService = AuthService();
+  final HeritageSiteService _heritageSiteService = HeritageSiteService();
+  
+  User? currentUser;
+  List<HeritageSite> featuredSites = [];
+  bool _isLoading = true;
 
-  final List<HeritageSite> featuredSites = [
-    HeritageSite(
-      id: '1',
-      name: 'Kasubi Tombs',
-      description: 'Royal burial grounds of Buganda kings',
-      location: 'Kampala, Uganda',
-      imageUrl: '',
-      culturalSignificance: 'UNESCO World Heritage Site',
-      latitude: 0.3476,
-      longitude: 32.5825,
-    ),
-    HeritageSite(
-      id: '2',
-      name: 'Great Mosque of Djenné',
-      description: 'Largest mud-brick building in the world',
-      location: 'Djenné, Mali',
-      imageUrl: '',
-      culturalSignificance: 'Center of Islamic learning',
-      latitude: 13.9060,
-      longitude: -4.5553,
-    ),
-    HeritageSite(
-      id: '3',
-      name: 'Lalibela Rock Churches',
-      description: 'Monolithic churches carved from rock',
-      location: 'Lalibela, Ethiopia',
-      imageUrl: '',
-      culturalSignificance: 'UNESCO World Heritage Site',
-      latitude: 12.0317,
-      longitude: 39.0419,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    
+    // Load user data
+    final user = await _authService.getCurrentUser();
+    
+    // Load heritage sites
+    final sites = await _heritageSiteService.getHeritageSites();
+    
+    setState(() {
+      currentUser = user;
+      featuredSites = sites.take(3).toList(); // Get first 3 as featured
+      _isLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: Text('My Heritage')),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final user = currentUser ?? User(
+      id: '0',
+      name: 'Guest',
+      email: '',
+      joinDate: DateTime.now(),
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -77,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
               radius: 16,
               backgroundColor: Colors.blue,
               child: Text(
-                currentUser.name[0],
+                user.name.isNotEmpty ? user.name[0].toUpperCase() : 'G',
                 style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
               ),
             ),
@@ -93,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Enhanced Welcome Section
-              _buildWelcomeSection(),
+              _buildWelcomeSection(user),
               SizedBox(height: 24),
 
               // Quick Stats
@@ -120,12 +122,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refreshData() async {
-    // Simulate data refresh
-    await Future.delayed(Duration(seconds: 1));
-    setState(() {});
+    await _loadData();
   }
 
-  Widget _buildWelcomeSection() {
+  Widget _buildWelcomeSection(User user) {
     return Container(
       padding: EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -159,25 +159,33 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Karibu, ${currentUser.name}! 👋',
+                  'Karibu, ${user.name}! 👋',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue[800]),
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Preserving ${currentUser.culturalBackground} heritage',
+                  user.culturalBackground != null 
+                      ? 'Preserving ${user.culturalBackground} heritage'
+                      : 'Preserving your heritage',
                   style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                 ),
                 SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
-                  children: currentUser.languages.map((language) => Chip(
+                  children: user.languages.isNotEmpty 
+                      ? user.languages.map((language) => Chip(
                     label: Text(
                       language,
                       style: TextStyle(fontSize: 12),
                     ),
                     backgroundColor: Colors.blue[100],
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  )).toList(),
+                  )).toList()
+                      : [Chip(
+                          label: Text('No languages set'),
+                          backgroundColor: Colors.grey[200],
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        )],
                 ),
               ],
             ),
